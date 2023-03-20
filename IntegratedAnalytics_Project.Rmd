@@ -1,0 +1,110 @@
+---
+title: "IntegratedAnalytics_Project"
+author: "Josh Wu"
+date: "2023-03-06"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(readxl)
+library(fastDummies)
+library(mice)
+library(caret)
+library(geosphere)
+```
+
+```{r}
+setwd("C:/Users/lenovo/Desktop")
+```
+
+```{r}
+data <- read.csv("footballFanSurvey.csv")
+```
+
+```{r}
+clean_data <- data[c(-2,-1),]
+```
+
+```{r}
+selected_data <- clean_data[, c(5,12,13,16,18,23,24,29,30,32,36,37,38,39,40,41:52,55,58,59,60,61,63:78,84:89,
+                                96:107,124)]
+
+better_data <- clean_data[,c(5,16,18,23,24,29,30,32,36,63,64,65,66,67,68,69,73,74,75,76,77,78,96,99,104,105,106,107,124)]
+
+#Hmisc::describe(selected_data)
+
+#Hmisc::describe(better_data)
+
+```
+
+```{r}
+lon_ND <- -86.238899
+lat_ND <- 41.699280
+for (i in 1:nrow(selected_data)){
+  #output of distm() function is in meters, divide by 1606.34 to convert to miles
+  selected_data[i, 'dist_ND'] <- distm(c(as.numeric(selected_data[i, "LocationLongitude"]), as.numeric(selected_data[i, "LocationLatitude"])), c(lon_ND, lat_ND), fun = distHaversine)/1609.34
+}
+#head(selected_data[c("LocationLongitude", "LocationLatitude", 'dist_ND')])
+```
+
+Add the distance into better_data
+```{r}
+better_data <- cbind(better_data, selected_data$dist_ND)
+```
+
+
+```{r}
+better_data$gamedaySatisfaction <- gsub("Very dissatisfied", 1, better_data$gamedaySatisfaction)
+better_data$gamedaySatisfaction <- gsub("Dissatisfied", 2, better_data$gamedaySatisfaction)
+better_data$gamedaySatisfaction <- gsub("Neither dissatisfied nor satisfied", 3, better_data$gamedaySatisfaction)
+better_data$gamedaySatisfaction <- gsub("Satisfied", 4, better_data$gamedaySatisfaction)
+better_data$gamedaySatisfaction <- gsub("Very satisfied", 5, better_data$gamedaySatisfaction)
+```
+
+```{r}
+better_data <- data.frame(lapply(better_data, function(x) {
+  x[x == ""] <- NA
+  return(x)
+}))
+```
+
+```{r}
+better_data <- data.frame(lapply(better_data, function(x) {
+  x[x == "Good"] <- 4
+  x[x == "Okay"] <- 3
+  x[x == "Poor"] <- 2
+  x[x == "Very good"] <- 5
+  x[x == "Very poor"] <- 1
+  return(x)
+}))
+```
+
+```{r}
+cols_to_convert <- c(23:29, 9:21,4,5)
+
+better_data[, cols_to_convert] <- lapply(better_data[, cols_to_convert], as.numeric)
+```
+
+```{r}
+cols_to_convert_cat <- c(1:3, 6:8, 22)
+
+better_data[, cols_to_convert_cat] <- lapply(better_data[, cols_to_convert_cat], as.factor)
+```
+
+```{r}
+imputed_data <- mice(better_data, method = "cart", m=1)
+imputed_data <- complete(imputed_data)
+```
+
+```{r}
+final_data <- dummy_cols(imputed_data, remove_selected_columns = TRUE, remove_first_dummy = TRUE)
+```
+
+```{r}
+model <- lm(final_data$gamedaySatisfaction~. , data = final_data)
+summary(model, digit=3)
+```
